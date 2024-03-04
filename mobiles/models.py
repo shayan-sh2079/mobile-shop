@@ -4,6 +4,11 @@ from django.db import models
 from .constants import BRANDS
 
 
+def mobile_img_directory_path(instance, filename):
+    # file will be uploaded to MEDIA_ROOT/user_<id>/<filename>
+    return "mobiles/images/mobiles/mobile_{0}/{1}".format(instance.mobile.id, filename)
+
+
 class Mobile(models.Model):
     brand = models.CharField(max_length=20, choices=BRANDS)
     name = models.CharField(max_length=50, unique=True)
@@ -17,3 +22,8 @@ class Mobile(models.Model):
         ]
     )
     price = models.PositiveBigIntegerField()
+
+
+class MobileImage(models.Model):
+    img = models.ImageField(upload_to=mobile_img_directory_path)
+    mobile = models.ForeignKey(Mobile, on_delete=models.CASCADE, related_name="images")
