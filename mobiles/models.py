@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
@@ -5,11 +6,11 @@ from .constants import BRANDS
 
 
 def mobile_img_directory_path(instance, filename):
-    # file will be uploaded to MEDIA_ROOT/user_<id>/<filename>
     return "mobiles/images/mobiles/mobile_{0}/{1}".format(instance.mobile.id, filename)
 
 
 class Mobile(models.Model):
+    seller = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     brand = models.CharField(max_length=20, choices=BRANDS)
     name = models.CharField(max_length=50, unique=True)
     quantity = models.PositiveIntegerField()

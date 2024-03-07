@@ -88,3 +88,4 @@ class MobileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Mobile
         fields = "__all__"
+        extra_kwargs = {"seller": {"read_only": True}}
