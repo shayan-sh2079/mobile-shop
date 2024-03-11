@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "mobiles.apps.MobilesConfig",
     "users.apps.UsersConfig",
+    "orders.apps.OrdersConfig",
 ]
 
 MIDDLEWARE = [

@@ -10,7 +10,7 @@ def mobile_img_directory_path(instance, filename):
 
 
 class Mobile(models.Model):
-    seller = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     brand = models.CharField(max_length=20, choices=BRANDS)
     name = models.CharField(max_length=50, unique=True)
     quantity = models.PositiveIntegerField()
