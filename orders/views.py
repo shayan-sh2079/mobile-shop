@@ -4,6 +4,7 @@ from rest_framework.generics import CreateAPIView, GenericAPIView, get_object_or
 from rest_framework.mixins import CreateModelMixin, UpdateModelMixin
 from rest_framework.response import Response
 
+from mobiles.models import Mobile
 from orders.models import Order
 from orders.serializers import BuySerializer, OrderSerializer
 
@@ -40,6 +41,12 @@ class OrdersView(GenericAPIView, CreateModelMixin, UpdateModelMixin):
         return Response(OrderSerializer(queryset, many=(not is_many)).data)
 
     def perform_create(self, serializer):
+        if Order.objects.filter(
+            mobile=serializer.validated_data["mobile"],
+            user=self.request.user,
+            is_purchased=False,
+        ).exists():
+            raise serializers.ValidationError({"message": "Order already exists"})
         serializer.save(user=self.request.user)
 
     def post(self, request, *args, **kwargs):
@@ -79,29 +86,29 @@ class BuyView(CreateAPIView):
                 total_price += order.quantity * order.mobile.price
 
         else:
-            for idx, mobile in enumerate(serializer.validated_data["mobiles"]):
+            for idx, mobile_id in enumerate(serializer.validated_data["mobiles"]):
+                mobile = get_object_or_404(Mobile, id=mobile_id)
                 try:
                     order = self.queryset.get(
-                        mobile_id=mobile, user=user, is_purchased=False
+                        mobile=mobile, user=user, is_purchased=False
                     )
                 except ObjectDoesNotExist:
                     order = Order(
                         user=user,
-                        mobile_id=mobile,
+                        mobile=mobile,
                         quantity=serializer.validated_data["quantities"][idx],
                     )
+                    print(order)
                 order.quantity = serializer.validated_data["quantities"][idx]
                 check_order_quantity(order)
                 total_price += (
                     order.mobile.price * serializer.validated_data["quantities"][idx]
                 )
                 not_purchased_orders.append(order)
-
         if total_price > user.credit:
             raise serializers.ValidationError(
                 {"message": "Not enough credit", "amount": total_price - user.credit}
             )
-
         for order in not_purchased_orders:
             order.is_purchased = True
             order.mobile.quantity -= order.quantity

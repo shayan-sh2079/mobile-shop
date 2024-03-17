@@ -10,9 +10,5 @@ class Order(models.Model):
         "mobiles.Mobile", on_delete=models.PROTECT, related_name="mobile"
     )
     is_purchased = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now=True)
     quantity = models.PositiveIntegerField()
-
-    class Meta:
-        # todo
-        unique_together = ("user", "mobile", "is_purchased")
