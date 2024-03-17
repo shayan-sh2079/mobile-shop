@@ -1,13 +1,14 @@
-from rest_framework import permissions
-from rest_framework.generics import GenericAPIView, get_object_or_404
-from rest_framework.mixins import CreateModelMixin
+from django.core.exceptions import ObjectDoesNotExist
+from rest_framework import permissions, serializers
+from rest_framework.generics import CreateAPIView, GenericAPIView, get_object_or_404
+from rest_framework.mixins import CreateModelMixin, UpdateModelMixin
 from rest_framework.response import Response
 
 from orders.models import Order
-from orders.serializers import OrderSerializer
+from orders.serializers import BuySerializer, OrderSerializer
 
 
-class OrdersView(GenericAPIView, CreateModelMixin):
+class OrdersView(GenericAPIView, CreateModelMixin, UpdateModelMixin):
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -28,6 +29,11 @@ class OrdersView(GenericAPIView, CreateModelMixin):
 
         return queryset
 
+    def get_object(self):
+        order = get_object_or_404(Order, pk=self.request.data["id"])
+        self.check_object_permissions(self.request, order)
+        return order
+
     def get(self, request, *args, **kwargs):
         queryset = self.get_queryset()
         is_many = self.request.query_params.get("mobile")
@@ -38,3 +44,68 @@ class OrdersView(GenericAPIView, CreateModelMixin):
 
     def post(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
+
+    def put(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+
+def check_order_quantity(order):
+    if order.quantity > order.mobile.quantity:
+        raise serializers.ValidationError(
+            {"message": f"not enough quantity for mobile {order.mobile.name}"}
+        )
+
+
+class BuyView(CreateAPIView):
+    serializer_class = BuySerializer
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = Order.objects.all()
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        not_purchased_orders = []
+        total_price = 0
+        if "mobiles" not in serializer.validated_data:
+            not_purchased_orders = self.queryset.filter(user=user, is_purchased=False)
+            if not not_purchased_orders:
+                raise serializers.ValidationError(
+                    {"message": "there are no in cart mobiles"}
+                )
+            serializer.validated_data["mobiles"] = not_purchased_orders
+            serializer.validated_data["quantities"] = []
+            for order in not_purchased_orders:
+                serializer.validated_data["quantities"].append(order.quantity)
+                check_order_quantity(order)
+                total_price += order.quantity * order.mobile.price
+
+        else:
+            for idx, mobile in enumerate(serializer.validated_data["mobiles"]):
+                try:
+                    order = self.queryset.get(
+                        mobile_id=mobile, user=user, is_purchased=False
+                    )
+                except ObjectDoesNotExist:
+                    order = Order(
+                        user=user,
+                        mobile_id=mobile,
+                        quantity=serializer.validated_data["quantities"][idx],
+                    )
+                order.quantity = serializer.validated_data["quantities"][idx]
+                check_order_quantity(order)
+                total_price += (
+                    order.mobile.price * serializer.validated_data["quantities"][idx]
+                )
+                not_purchased_orders.append(order)
+
+        if total_price > user.credit:
+            raise serializers.ValidationError(
+                {"message": "Not enough credit", "amount": total_price - user.credit}
+            )
+
+        for order in not_purchased_orders:
+            order.is_purchased = True
+            order.mobile.quantity -= order.quantity
+            user.credit -= total_price
+            user.save()
+            order.mobile.save()
+            order.save()

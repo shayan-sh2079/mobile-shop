@@ -38,6 +38,7 @@ class User(AbstractBaseUser):
     is_admin = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    credit = models.PositiveIntegerField(default=0)
     objects = MyUserManager()
 
     USERNAME_FIELD = "email"
