@@ -3,14 +3,17 @@ from rest_framework import serializers
 from .models import Mobile, MobileImage
 
 
-class MobileImageSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = MobileImage
-        fields = "__all__"
+class ImageUrlField(serializers.RelatedField):
+    def to_representation(self, instance):
+        url = instance.img.url
+        request = self.context.get('request', None)
+        if request is not None:
+            return request.build_absolute_uri(url)
+        return url
 
 
 class MobileSerializer(serializers.ModelSerializer):
-    images = MobileImageSerializer(many=True, read_only=True)
+    images = ImageUrlField(many=True, read_only=True)
     uploaded_images = serializers.ListField(
         child=serializers.ImageField(max_length=400, allow_empty_file=False),
         write_only=True,
