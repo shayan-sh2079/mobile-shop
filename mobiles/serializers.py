@@ -6,7 +6,7 @@ from .models import Mobile, MobileImage
 class ImageUrlField(serializers.RelatedField):
     def to_representation(self, instance):
         url = instance.img.url
-        request = self.context.get('request', None)
+        request = self.context.get("request", None)
         if request is not None:
             return request.build_absolute_uri(url)
         return url
@@ -77,9 +77,13 @@ class MobileSerializer(serializers.ModelSerializer):
                 "'uploaded_images'"
             )
 
+        if (uploaded_images is None) and (added_image is None):
+            raise serializers.ValidationError(
+                "You should provide an image for the mobile"
+            )
+
         mobile = Mobile.objects.create(**validated_data)
         if uploaded_images is not None:
-            self.delete_images(mobile)
             for img in uploaded_images:
                 MobileImage.objects.create(mobile=mobile, img=img)
 
