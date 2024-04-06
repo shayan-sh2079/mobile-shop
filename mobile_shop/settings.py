@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     "mobiles.apps.MobilesConfig",
     "users.apps.UsersConfig",
     "orders.apps.OrdersConfig",
+    "django_filters",
 ]
 
 MIDDLEWARE = [

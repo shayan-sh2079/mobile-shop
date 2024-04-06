@@ -14,6 +14,7 @@ class Mobile(models.Model):
     brand = models.CharField(max_length=20, choices=BRANDS)
     name = models.CharField(max_length=50, unique=True)
     quantity = models.PositiveIntegerField()
+    sells = models.PositiveIntegerField()
     score = models.FloatField(
         validators=[
             MinValueValidator(
@@ -23,6 +24,7 @@ class Mobile(models.Model):
         ]
     )
     price = models.PositiveBigIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class MobileImage(models.Model):
