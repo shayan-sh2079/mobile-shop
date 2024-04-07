@@ -1,5 +1,6 @@
 from django_filters import rest_framework as filters
 from rest_framework import permissions, viewsets
+from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 
 from .filters import MobileFilter
@@ -15,8 +16,9 @@ class MobileViewSet(viewsets.ModelViewSet):
         permissions.IsAuthenticatedOrReadOnly,
         permissions.IsAdminUser | IsOwnerOrReadOnly,
     ]
-    filter_backends = (filters.DjangoFilterBackend,)
+    filter_backends = (filters.DjangoFilterBackend, SearchFilter)
     filterset_class = MobileFilter
+    search_fields = ["name", "brand"]
 
     def list(self, request, *args, **kwargs):
         response = super().list(request, *args, **kwargs)

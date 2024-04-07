@@ -26,5 +26,5 @@ class MobileFilter(django_filters.FilterSet):
     class Meta:
         model = Mobile
         fields = {
-            "price": ["lt", "gt"],
+            "price": ["lte", "gte"],
         }
