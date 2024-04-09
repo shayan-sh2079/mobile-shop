@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "users.apps.UsersConfig",
     "orders.apps.OrdersConfig",
     "reviews.apps.ReviewsConfig",
+    "wallets.apps.WalletsConfig",
     "django_filters",
 ]
 
