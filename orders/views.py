@@ -1,42 +1,34 @@
 from django.apps import apps
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import permissions, serializers
-from rest_framework.generics import CreateAPIView, GenericAPIView, get_object_or_404
-from rest_framework.mixins import CreateModelMixin, UpdateModelMixin
+from rest_framework.generics import get_object_or_404
+from rest_framework.mixins import CreateModelMixin, ListModelMixin, UpdateModelMixin
 from rest_framework.response import Response
+from rest_framework.viewsets import GenericViewSet
 
 from mobiles.models import Mobile
-from orders.models import Order
-from orders.serializers import BuySerializer, OrderSerializer
+from orders.models import Item, Order, PurchasedOrder
+from orders.serializers import OrderSerializer, PurchasedSerializer
 
 Transaction = apps.get_model("wallets", "Transaction")
 
 
-class OrdersView(GenericAPIView, CreateModelMixin, UpdateModelMixin):
+class OrdersView(CreateModelMixin, UpdateModelMixin, GenericViewSet):
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         mobile_id = self.request.query_params.get("mobile")
-        is_purchased = bool(self.request.query_params.get("is_purchased"))
         if mobile_id:
             queryset = get_object_or_404(
                 Order,
                 user=self.request.user,
                 mobile=mobile_id,
-                is_purchased=is_purchased,
             )
         else:
-            queryset = Order.objects.filter(
-                user=self.request.user, is_purchased=is_purchased
-            )
+            queryset = Order.objects.filter(user=self.request.user)
 
         return queryset
-
-    def get_object(self):
-        order = get_object_or_404(Order, pk=self.request.data["id"])
-        self.check_object_permissions(self.request, order)
-        return order
 
     def get(self, request, *args, **kwargs):
         queryset = self.get_queryset()
@@ -47,16 +39,9 @@ class OrdersView(GenericAPIView, CreateModelMixin, UpdateModelMixin):
         if Order.objects.filter(
             mobile=serializer.validated_data["mobile"],
             user=self.request.user,
-            is_purchased=False,
         ).exists():
             raise serializers.ValidationError({"message": "Order already exists"})
         serializer.save(user=self.request.user)
-
-    def post(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
-
-    def put(self, request, *args, **kwargs):
-        return super().partial_update(request, *args, **kwargs)
 
 
 def check_order_quantity(order):
@@ -66,25 +51,24 @@ def check_order_quantity(order):
         )
 
 
-class BuyView(CreateAPIView):
-    serializer_class = BuySerializer
+class BuyView(CreateModelMixin, ListModelMixin, GenericViewSet):
+    serializer_class = PurchasedSerializer
     permission_classes = [permissions.IsAuthenticated]
-    queryset = Order.objects.all()
+
+    def get_queryset(self):
+        return PurchasedOrder.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
         user = self.request.user
         not_purchased_orders = []
         total_price = 0
         if "mobiles" not in serializer.validated_data:
-            not_purchased_orders = self.queryset.filter(user=user, is_purchased=False)
+            not_purchased_orders = Order.objects.filter(user=user)
             if not not_purchased_orders:
                 raise serializers.ValidationError(
                     {"message": "there are no in cart mobiles"}
                 )
-            serializer.validated_data["mobiles"] = not_purchased_orders
-            serializer.validated_data["quantities"] = []
             for order in not_purchased_orders:
-                serializer.validated_data["quantities"].append(order.quantity)
                 check_order_quantity(order)
                 total_price += order.quantity * order.mobile.price
 
@@ -92,9 +76,7 @@ class BuyView(CreateAPIView):
             for idx, mobile_id in enumerate(serializer.validated_data["mobiles"]):
                 mobile = get_object_or_404(Mobile, id=mobile_id)
                 try:
-                    order = self.queryset.get(
-                        mobile=mobile, user=user, is_purchased=False
-                    )
+                    order = Order.objects.get(mobile=mobile, user=user)
                 except ObjectDoesNotExist:
                     order = Order(
                         user=user,
@@ -116,11 +98,18 @@ class BuyView(CreateAPIView):
             raise serializers.ValidationError(
                 {"message": "Not enough credit", "amount": total_price - user_credit}
             )
+
+        purchased_order = PurchasedOrder.objects.create(user=user, amount=total_price)
         for order in not_purchased_orders:
-            order.is_purchased = True
             order.mobile.quantity -= order.quantity
             order.mobile.save()
-            order.save()
+            Item.objects.create(
+                purchased_order=purchased_order,
+                mobile=order.mobile,
+                quantity=order.quantity,
+            )
+            if "mobiles" not in serializer.validated_data:
+                order.delete()
         mobiles_names = ", ".join(item.mobile.name for item in not_purchased_orders)
         withdraw_transaction = Transaction.objects.create(
             user=user, amount=-total_price, comment=f"buying {mobiles_names}"

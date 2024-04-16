@@ -1,6 +1,8 @@
 from rest_framework import serializers
 
-from .models import Order
+from mobiles.serializers import MobileSerializer
+
+from .models import Item, Order, PurchasedOrder
 
 
 class OrderSerializer(serializers.ModelSerializer):
@@ -10,18 +12,36 @@ class OrderSerializer(serializers.ModelSerializer):
         extra_kwargs = {"user": {"read_only": True}}
 
 
-class BuySerializer(serializers.Serializer):
+class PurchasedItemSerializer(serializers.ModelSerializer):
+    mobile = MobileSerializer(read_only=True)
+
+    class Meta:
+        model = Item
+        fields = "__all__"
+
+
+class PurchasedSerializer(serializers.ModelSerializer):
+    items = PurchasedItemSerializer(many=True, read_only=True)
     mobiles = serializers.ListField(
-        child=serializers.IntegerField(), allow_empty=False, required=False
+        child=serializers.IntegerField(),
+        allow_empty=False,
+        required=False,
+        write_only=True,
     )
     quantities = serializers.ListField(
-        child=serializers.IntegerField(min_value=1), allow_empty=False, required=False
+        child=serializers.IntegerField(min_value=1),
+        allow_empty=False,
+        required=False,
+        write_only=True,
     )
     user = serializers.IntegerField(source="user.id", read_only=True)
+    transaction_amount = serializers.IntegerField(
+        source="transaction.amount", read_only=True
+    )
 
     def validate(self, attrs):
         if (attrs.get("mobiles") and not attrs.get("quantities")) or (
-            attrs.get("mobiles") and not attrs.get("quantities")
+            not attrs.get("mobiles") and attrs.get("quantities")
         ):
             raise serializers.ValidationError(
                 {
@@ -40,4 +60,13 @@ class BuySerializer(serializers.Serializer):
         return attrs
 
     class Meta:
-        fields = "__all__"
+        model = PurchasedOrder
+        fields = (
+            "mobiles",
+            "quantities",
+            "user",
+            "items",
+            "created_at",
+            "transaction_amount",
+        )
+        extra_kwargs = {"created_at": {"read_only": True}}
