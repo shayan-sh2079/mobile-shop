@@ -1,3 +1,4 @@
+from django.apps import apps
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import permissions, serializers
 from rest_framework.generics import CreateAPIView, GenericAPIView, get_object_or_404
@@ -7,6 +8,8 @@ from rest_framework.response import Response
 from mobiles.models import Mobile
 from orders.models import Order
 from orders.serializers import BuySerializer, OrderSerializer
+
+Transaction = apps.get_model("wallets", "Transaction")
 
 
 class OrdersView(GenericAPIView, CreateModelMixin, UpdateModelMixin):
@@ -98,21 +101,28 @@ class BuyView(CreateAPIView):
                         mobile=mobile,
                         quantity=serializer.validated_data["quantities"][idx],
                     )
-                    print(order)
                 order.quantity = serializer.validated_data["quantities"][idx]
                 check_order_quantity(order)
                 total_price += (
                     order.mobile.price * serializer.validated_data["quantities"][idx]
                 )
                 not_purchased_orders.append(order)
-        if total_price > user.credit:
+
+        user_transactions = Transaction.objects.filter(user=user)
+        user_credit = 0
+        for transaction in user_transactions:
+            user_credit += transaction.amount
+        if total_price > user_credit:
             raise serializers.ValidationError(
-                {"message": "Not enough credit", "amount": total_price - user.credit}
+                {"message": "Not enough credit", "amount": total_price - user_credit}
             )
         for order in not_purchased_orders:
             order.is_purchased = True
             order.mobile.quantity -= order.quantity
-            user.credit -= total_price
-            user.save()
             order.mobile.save()
             order.save()
+        mobiles_names = ", ".join(item.mobile.name for item in not_purchased_orders)
+        withdraw_transaction = Transaction.objects.create(
+            user=user, amount=-total_price, comment=f"buying {mobiles_names}"
+        )
+        withdraw_transaction.save()
