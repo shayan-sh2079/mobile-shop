@@ -1,47 +1,62 @@
 from django.apps import apps
 from django.core.exceptions import ObjectDoesNotExist
-from rest_framework import permissions, serializers
+from rest_framework import permissions, serializers, status
 from rest_framework.generics import get_object_or_404
-from rest_framework.mixins import CreateModelMixin, ListModelMixin, UpdateModelMixin
+from rest_framework.mixins import CreateModelMixin, ListModelMixin
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.viewsets import GenericViewSet
 
-from mobiles.models import Mobile
 from orders.models import Item, Order, PurchasedOrder
 from orders.serializers import OrderSerializer, PurchasedSerializer
 
 Transaction = apps.get_model("wallets", "Transaction")
+Mobile = apps.get_model("mobiles", "Mobile")
 
 
-class OrdersView(CreateModelMixin, UpdateModelMixin, GenericViewSet):
-    serializer_class = OrderSerializer
+class OrdersView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        mobile_id = self.request.query_params.get("mobile")
-        if mobile_id:
-            queryset = get_object_or_404(
-                Order,
-                user=self.request.user,
-                mobile=mobile_id,
-            )
-        else:
-            queryset = Order.objects.filter(user=self.request.user)
-
-        return queryset
+        return get_object_or_404(Order, user=self.request.user)
 
     def get(self, request, *args, **kwargs):
         queryset = self.get_queryset()
-        is_many = self.request.query_params.get("mobile")
-        return Response(OrderSerializer(queryset, many=(not is_many)).data)
+        return Response(OrderSerializer(queryset, many=False).data)
 
-    def perform_create(self, serializer):
-        if Order.objects.filter(
-            mobile=serializer.validated_data["mobile"],
-            user=self.request.user,
-        ).exists():
-            raise serializers.ValidationError({"message": "Order already exists"})
-        serializer.save(user=self.request.user)
+    def post(self, request, *args, **kwargs):
+        serializer = OrderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        mobiles = []
+        for mobile in serializer.validated_data["mobiles"]:
+            mobiles.append(get_object_or_404(Mobile, pk=mobile))
+
+        try:
+            order = Order.objects.get(user=request.user)
+            order.items.all().delete()
+        except ObjectDoesNotExist:
+            order = Order.objects.create(user=request.user)
+
+        for idx, mobile in enumerate(mobiles):
+            Item.objects.create(
+                mobile=mobile,
+                order=order,
+                quantity=serializer.validated_data["quantities"][idx],
+            )
+
+        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+    def patch(self, request, *args, **kwargs):
+        serializer = OrderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        order = get_object_or_404(Order, user=request.user)
+        items = []
+        for mobile in serializer.validated_data["mobiles"]:
+            items.append(get_object_or_404(order.items.all(), mobile=mobile))
+        for idx, item in enumerate(items):
+            item.quantity = serializer.validated_data["quantities"][idx]
+            item.save()
+        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
 
 def check_order_quantity(order):
@@ -60,35 +75,16 @@ class BuyView(CreateModelMixin, ListModelMixin, GenericViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        not_purchased_orders = []
         total_price = 0
-        if "mobiles" not in serializer.validated_data:
-            not_purchased_orders = Order.objects.filter(user=user)
-            if not not_purchased_orders:
-                raise serializers.ValidationError(
-                    {"message": "there are no in cart mobiles"}
-                )
-            for order in not_purchased_orders:
-                check_order_quantity(order)
-                total_price += order.quantity * order.mobile.price
-
-        else:
-            for idx, mobile_id in enumerate(serializer.validated_data["mobiles"]):
-                mobile = get_object_or_404(Mobile, id=mobile_id)
-                try:
-                    order = Order.objects.get(mobile=mobile, user=user)
-                except ObjectDoesNotExist:
-                    order = Order(
-                        user=user,
-                        mobile=mobile,
-                        quantity=serializer.validated_data["quantities"][idx],
-                    )
-                order.quantity = serializer.validated_data["quantities"][idx]
-                check_order_quantity(order)
-                total_price += (
-                    order.mobile.price * serializer.validated_data["quantities"][idx]
-                )
-                not_purchased_orders.append(order)
+        try:
+            not_purchased_orders = Order.objects.get(user=user)
+        except ObjectDoesNotExist:
+            raise serializers.ValidationError(
+                {"message": "there are no in cart mobiles"}
+            )
+        for order in not_purchased_orders:
+            check_order_quantity(order)
+            total_price += order.quantity * order.mobile.price
 
         user_transactions = Transaction.objects.filter(user=user)
         user_credit = 0
@@ -108,8 +104,7 @@ class BuyView(CreateModelMixin, ListModelMixin, GenericViewSet):
                 mobile=order.mobile,
                 quantity=order.quantity,
             )
-            if "mobiles" not in serializer.validated_data:
-                order.delete()
+            order.delete()
         mobiles_names = ", ".join(item.mobile.name for item in not_purchased_orders)
         withdraw_transaction = Transaction.objects.create(
             user=user, amount=-total_price, comment=f"buying {mobiles_names}"

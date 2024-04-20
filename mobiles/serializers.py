@@ -79,7 +79,7 @@ class MobileSerializer(serializers.ModelSerializer):
 
         if (uploaded_images is None) and (added_image is None):
             raise serializers.ValidationError(
-                "You should provide an image for the mobile"
+                {"message": "You should provide an image for the mobile"}
             )
 
         mobile = Mobile.objects.create(**validated_data)
