@@ -59,13 +59,6 @@ class OrdersView(APIView):
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
 
-def check_order_quantity(order):
-    if order.quantity > order.mobile.quantity:
-        raise serializers.ValidationError(
-            {"message": f"not enough quantity for mobile {order.mobile.name}"}
-        )
-
-
 class BuyView(CreateModelMixin, ListModelMixin, GenericViewSet):
     serializer_class = PurchasedSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -77,14 +70,18 @@ class BuyView(CreateModelMixin, ListModelMixin, GenericViewSet):
         user = self.request.user
         total_price = 0
         try:
-            not_purchased_orders = Order.objects.get(user=user)
+            not_purchased_order = Order.objects.get(user=user)
+            items = not_purchased_order.items.all()
         except ObjectDoesNotExist:
             raise serializers.ValidationError(
                 {"message": "there are no in cart mobiles"}
             )
-        for order in not_purchased_orders:
-            check_order_quantity(order)
-            total_price += order.quantity * order.mobile.price
+        for item in items:
+            if item.quantity > item.mobile.quantity:
+                raise serializers.ValidationError(
+                    {"message": f"not enough quantity for mobile {item.mobile.name}"}
+                )
+            total_price += item.quantity * item.mobile.price
 
         user_transactions = Transaction.objects.filter(user=user)
         user_credit = 0
@@ -95,18 +92,17 @@ class BuyView(CreateModelMixin, ListModelMixin, GenericViewSet):
                 {"message": "Not enough credit", "amount": total_price - user_credit}
             )
 
-        purchased_order = PurchasedOrder.objects.create(user=user, amount=total_price)
-        for order in not_purchased_orders:
-            order.mobile.quantity -= order.quantity
-            order.mobile.save()
-            Item.objects.create(
-                purchased_order=purchased_order,
-                mobile=order.mobile,
-                quantity=order.quantity,
-            )
-            order.delete()
-        mobiles_names = ", ".join(item.mobile.name for item in not_purchased_orders)
+        mobiles_names = ", ".join(item.mobile.name for item in items)
         withdraw_transaction = Transaction.objects.create(
             user=user, amount=-total_price, comment=f"buying {mobiles_names}"
         )
-        withdraw_transaction.save()
+
+        purchased_order = PurchasedOrder.objects.create(
+            user=user, transaction=withdraw_transaction
+        )
+        for item in items:
+            item.mobile.quantity -= item.quantity
+            item.mobile.save()
+
+        items.update(order=None, purchased_order=purchased_order)
+        not_purchased_order.delete()
