@@ -22,7 +22,13 @@ class OrdersView(APIView):
 
     def get(self, request, *args, **kwargs):
         queryset = self.get_queryset()
-        return Response(OrderSerializer(queryset, many=False).data)
+        kwargs.setdefault(
+            "context",
+            {
+                "request": self.request,
+            },
+        )
+        return Response(OrderSerializer(queryset, many=False, *args, **kwargs).data)
 
     def post(self, request, *args, **kwargs):
         serializer = OrderSerializer(data=request.data)
@@ -56,7 +62,15 @@ class OrdersView(APIView):
         for idx, item in enumerate(items):
             item.quantity = serializer.validated_data["quantities"][idx]
             item.save()
-        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+        kwargs.setdefault(
+            "context",
+            {
+                "request": self.request,
+            },
+        )
+        return Response(
+            OrderSerializer(order, *args, **kwargs).data, status=status.HTTP_201_CREATED
+        )
 
 
 class BuyView(CreateModelMixin, ListModelMixin, GenericViewSet):
