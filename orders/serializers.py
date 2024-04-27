@@ -40,6 +40,15 @@ class OrderSerializer(serializers.ModelSerializer):
         extra_kwargs = {"user": {"read_only": True}}
 
 
+class OrderDetailSerializer(serializers.ModelSerializer):
+    items = ItemSerializer(many=True, read_only=True)
+    count = serializers.IntegerField(required=True, write_only=True)
+
+    class Meta:
+        model = Order
+        fields = ("items", "count")
+
+
 class PurchasedSerializer(serializers.ModelSerializer):
     purchased_items = ItemSerializer(many=True, read_only=True)
     user = serializers.IntegerField(source="user.id", read_only=True)

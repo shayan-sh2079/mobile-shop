@@ -8,7 +8,11 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import GenericViewSet
 
 from orders.models import Item, Order, PurchasedOrder
-from orders.serializers import OrderSerializer, PurchasedSerializer
+from orders.serializers import (
+    OrderDetailSerializer,
+    OrderSerializer,
+    PurchasedSerializer,
+)
 
 Transaction = apps.get_model("wallets", "Transaction")
 Mobile = apps.get_model("mobiles", "Mobile")
@@ -52,16 +56,15 @@ class OrdersView(APIView):
 
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
-    def patch(self, request, *args, **kwargs):
-        serializer = OrderSerializer(data=request.data)
+
+class OrderDetailView(APIView):
+    def patch(self, request, pk, *args, **kwargs):
+        serializer = OrderDetailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         order = get_object_or_404(Order, user=request.user)
-        items = []
-        for mobile in serializer.validated_data["mobiles"]:
-            items.append(get_object_or_404(order.items.all(), mobile=mobile))
-        for idx, item in enumerate(items):
-            item.quantity = serializer.validated_data["quantities"][idx]
-            item.save()
+        item = get_object_or_404(order.items.all(), mobile=pk)
+        item.quantity = serializer.validated_data["count"]
+        item.save()
         kwargs.setdefault(
             "context",
             {
@@ -71,6 +74,12 @@ class OrdersView(APIView):
         return Response(
             OrderSerializer(order, *args, **kwargs).data, status=status.HTTP_201_CREATED
         )
+
+    def delete(self, request, pk):
+        order = get_object_or_404(Order, user=request.user)
+        item = get_object_or_404(order.items.all(), mobile=pk)
+        item.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class BuyView(CreateModelMixin, ListModelMixin, GenericViewSet):
