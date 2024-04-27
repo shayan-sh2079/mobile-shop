@@ -4,6 +4,8 @@ from wallets.models import Transaction
 
 
 class TransactionSerializer(serializers.ModelSerializer):
+    amount = serializers.IntegerField(min_value=1)
+
     class Meta:
         model = Transaction
         exclude = ("user",)

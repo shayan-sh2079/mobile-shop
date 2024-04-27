@@ -1,4 +1,6 @@
-from rest_framework import mixins, permissions, serializers
+from django.db.models import Sum
+from rest_framework import mixins, permissions
+from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 
 from wallets.models import Transaction
@@ -9,24 +11,27 @@ from wallets.serializers import TransactionSerializer
 class TransactionsViewSet(
     mixins.CreateModelMixin, mixins.ListModelMixin, GenericViewSet
 ):
-    queryset = Transaction.objects.all()
     serializer_class = TransactionSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwner]
 
-    def filter_queryset(self, queryset):
-        return queryset.filter(user=self.request.user)
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        total_credit = self.get_queryset().aggregate(Sum("amount")).get("amount__sum")
+
+        return Response(
+            {
+                "history": response.data,
+                "credit": total_credit,
+            }
+        )
+
+    def get_queryset(self):
+        return Transaction.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
         if (
             "comment" not in serializer.validated_data
             or serializer.validated_data["comment"] is None
         ):
-            if serializer.validated_data["amount"] > 0:
-                serializer.validated_data["comment"] = "Deposit into the wallet"
-            elif serializer.validated_data["amount"] < 0:
-                serializer.validated_data["comment"] = "Withdraw from the wallet"
-            else:
-                raise serializers.ValidationError(
-                    {"message": "You can't give 0 as the amount"}
-                )
+            serializer.validated_data["comment"] = "Deposit into the wallet"
         serializer.save(user=self.request.user)
